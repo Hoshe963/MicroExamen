@@ -40,6 +40,21 @@ pipeline {
                 }
             }
         }
+        stage('Docker Build & Run') {
+			steps {
+				script {
+					sh '''
+                docker stop alonso_app || true
+                docker rm alonso_app || true
+                docker rmi micro/product:1.0.0 || true
+
+                docker build -t micro/product:1.0.0 -f docker/Dockerfile .
+                docker run -d --name alonso_app -p 8086:8080 micro/product:1.0.0
+            '''
+        }
+    }
+}
+
 
     }
 
