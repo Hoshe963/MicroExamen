@@ -9,7 +9,7 @@ pipeline {
 		stage('Clone') {
 			steps {
 				cleanWs()
-                git branch: 'pruebas', url: 'https://github.com/DiegoAlonso26/ExamenDespliegue.git'
+                git branch: 'main', url: 'https://github.com/DiegoAlonso26/ExamenDespliegue.git'
             }
         }
 
