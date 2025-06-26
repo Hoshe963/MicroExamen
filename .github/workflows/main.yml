@@ -1,58 +1,63 @@
-#main.yml
-name: 🚀 CI/CD con SonarQube y Docker
+# Nombre del workflow
+name: Build, Analyze (SonarQube) and Deploy
 
+# Disparadores
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
+  workflow_dispatch:
+
+# Variables de entorno
+env:
+  DOCKER_PROJECT_NAME: 'Examen_03'
+  APP_CONTAINER_NAME: 'product_app'
 
 jobs:
-  build-analyze-deploy:
-    name: 🔁 Build + Análisis + Despliegue
+  build-analyze-and-deploy:
+    name: Build, Analyze and Deploy Locally
     runs-on: self-hosted
 
     steps:
-      - name: 📥 Paso 1 - Clonar repositorio
-        uses: actions/checkout@v3
+      # 1. Descargar el código
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: ☕ Paso 2 - Instalar Java y Maven
-        uses: actions/setup-java@v3
+      # 2. Configurar JDK 17
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: maven
 
-      - name: 🧪 Paso 3 - Compilar con Maven
-        run: |
-          echo "📦 Compilando proyecto..."
-          mvn clean package -DskipTests
-          echo "✅ Build completado."
-
-      - name: 📊 Paso 4 - Análisis con SonarQube
+      # ====================================================================
+      # 3. NUEVO PASO: Construir y Analizar con SonarQube
+      #    Ejecutamos el análisis de SonarQube como parte del build de Maven.
+      #    Le pasamos la URL del servidor y el token de forma segura.
+      # ====================================================================
+      - name: Build and Analyze with SonarQube
+        run: >
+          mvn -B verify sonar:sonar
+          -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }}
+          -Dsonar.login=${{ secrets.SONAR_TOKEN }}
         env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          # El token de GitHub es útil si usas la integración con PRs
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 4. Desplegar con Docker Compose (solo si el paso anterior fue exitoso)
+      - name: Deploy with Docker Compose
         run: |
-          echo "🔍 Ejecutando análisis SonarQube..."
-          mvn sonar:sonar \
-            -Dsonar.projectKey=lpapp \
-            -Dsonar.projectName=lpapp \
-            -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.login=$SONAR_TOKEN
-          echo "✅ Análisis completado."
-
-      - name: 🐳 Paso 5 - Desplegar con Docker Compose
-        run: |
-          echo "🧹 Apagando contenedores anteriores si existen..."
-          docker compose -f docker/docker-compose.yml down -v --remove-orphans || echo "⚠️ No se pudo bajar contenedores"
-
-          echo "🚀 Iniciando nuevo despliegue..."
-          docker compose -f docker/docker-compose.yml up -d --build || echo "❌ Error en docker-compose up"
-
-          echo "⏳ Esperando 10 segundos..."
-          sleep 10
-
-          echo "📋 Contenedores activos:"
-          docker ps
-
-          echo "📝 Logs recientes del contenedor product_app_2025:"
-          docker logs --tail=50 product_app_2025 || echo "⚠️ No se pudo obtener logs"
+          echo "✅ Iniciando despliegue en el runner local..."
+          cd docker
+          echo "🧹 Limpiando despliegue anterior..."
+          docker-compose -p ${{ env.DOCKER_PROJECT_NAME }} down -v --remove-orphans
+          echo "🏗️ Construyendo y levantando los servicios..."
+          docker-compose -p ${{ env.DOCKER_PROJECT_NAME }} up -d --build
+          echo "🔍 Verificando estado de los contenedores..."
+          docker-compose -p ${{ env.DOCKER_PROJECT_NAME }} ps
+          echo "⏳ Esperando 15 segundos para que la aplicación inicie..."
+          sleep 15
+          echo "🗒️ Mostrando los últimos logs de la aplicación:"
+          docker logs --tail 500 ${{ env.APP_CONTAINER_NAME }}
+          echo "🎉 ✓ Despliegue completado."
