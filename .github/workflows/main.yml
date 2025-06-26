@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build-analyze-deploy:
@@ -12,46 +13,45 @@ jobs:
 
     steps:
       - name: 📥 Paso 1 - Clonar repositorio
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          # SonarQube necesita el historial completo para analizar código nuevo
+          fetch-depth: 0
 
-      - name: ☕ Paso 2 - Instalar Java y Maven
-        uses: actions/setup-java@v3
+      - name: ☕ Paso 2 - Configurar Java (usará el Maven del runner)
+        uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: maven
 
-      - name: 🧪 Paso 3 - Compilar con Maven
-        run: |
-          echo "📦 Compilando proyecto..."
-          mvn clean package -DskipTests
-          echo "✅ Build completado."
-
-      - name: 📊 Paso 4 - Análisis con SonarQube
+      - name: 📊 Paso 3 - Compilar y Analizar con SonarQube
         env:
+          # El token de GitHub es útil para decorar Pull Requests
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tu token de SonarQube, que hemos guardado de forma segura
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
-          echo "🔍 Ejecutando análisis SonarQube..."
-          mvn sonar:sonar \
+          echo "📦 Compilando y ejecutando análisis SonarQube..."
+          mvn verify sonar:sonar \
             -Dsonar.projectKey=lpapp \
-            -Dsonar.projectName=lpapp \
-            -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.login=$SONAR_TOKEN
+            -Dsonar.host.url=${{ secrets.SONAR_HOST_URL }} \
+            -Dsonar.login=${{ env.SONAR_TOKEN }}
           echo "✅ Análisis completado."
 
-      - name: 🐳 Paso 5 - Desplegar con Docker Compose
+      - name: 🐳 Paso 4 - Desplegar con Docker Compose
         run: |
           echo "🧹 Apagando contenedores anteriores si existen..."
-          docker compose -f docker/docker-compose.yml down -v --remove-orphans || echo "⚠️ No se pudo bajar contenedores"
+          docker compose -f docker/docker-compose.yml down -v --remove-orphans
 
           echo "🚀 Iniciando nuevo despliegue..."
-          docker compose -f docker/docker-compose.yml up -d --build || echo "❌ Error en docker-compose up"
+          docker compose -f docker/docker-compose.yml up -d --build
 
-          echo "⏳ Esperando 10 segundos..."
-          sleep 10
+          echo "⏳ Esperando 15 segundos para que la aplicación arranque..."
+          sleep 15
 
           echo "📋 Contenedores activos:"
           docker ps
 
-          echo "📝 Logs recientes del contenedor product_app_2025:"
-          docker logs --tail=50 product_app_2025 || echo "⚠️ No se pudo obtener logs"
+          echo "📝 Logs recientes del contenedor de la aplicación:"
+          # Asegúrate de que el nombre del contenedor sea el correcto
+          docker logs --tail=100 product_app || echo "⚠️ No se pudo obtener logs de 'product_app'"
